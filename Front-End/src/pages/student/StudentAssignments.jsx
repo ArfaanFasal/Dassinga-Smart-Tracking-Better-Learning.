@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useLMS } from '../../context/LMSContext';
 import { AssignmentCard } from '../../components/AssignmentCard';
 import { sortAssignments } from '../../utils/sortAssignments';
@@ -8,6 +8,13 @@ export function StudentAssignments() {
   const { studentAssignments } = useLMS();
   const [search, setSearch] = useState('');
   const [subject, setSubject] = useState('all');
+  const [submitNotice, setSubmitNotice] = useState('');
+
+  useEffect(() => {
+    if (!submitNotice) return;
+    const t = setTimeout(() => setSubmitNotice(''), 3000);
+    return () => clearTimeout(t);
+  }, [submitNotice]);
 
   const subjects = useMemo(() => {
     const s = new Set(studentAssignments.map((a) => a.subject));
@@ -80,9 +87,15 @@ export function StudentAssignments() {
         </select>
       </div>
 
+      {submitNotice && (
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300">
+          {submitNotice}
+        </div>
+      )}
+
       <div className="grid gap-6 sm:grid-cols-2 xl:grid-cols-3">
         {filtered.map((a) => (
-          <AssignmentCard key={a.id} assignment={a} />
+          <AssignmentCard key={a.id} assignment={a} onSubmitted={setSubmitNotice} />
         ))}
       </div>
       {filtered.length === 0 && (

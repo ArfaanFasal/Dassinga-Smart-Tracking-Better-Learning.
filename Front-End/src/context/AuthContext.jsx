@@ -4,30 +4,22 @@ import { AUTH_EXPIRED_EVENT, apiLogin, apiRegister, clearAuthToken, hasAuthToken
 const AuthContext = createContext(null);
 
 const STORAGE_KEY = 'salms_auth_user';
-const STORAGE_VERSION_KEY = 'salms_storage_version';
-const STORAGE_VERSION = '2';
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const storedVersion = localStorage.getItem(STORAGE_VERSION_KEY);
-    if (storedVersion !== STORAGE_VERSION) {
-      localStorage.removeItem(STORAGE_KEY);
-      clearAuthToken();
-      localStorage.setItem(STORAGE_VERSION_KEY, STORAGE_VERSION);
-    }
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
+      const raw = sessionStorage.getItem(STORAGE_KEY);
       if (raw && hasAuthToken()) {
         setUser(JSON.parse(raw));
       } else {
-        localStorage.removeItem(STORAGE_KEY);
+        sessionStorage.removeItem(STORAGE_KEY);
         clearAuthToken();
       }
     } catch {
-      localStorage.removeItem(STORAGE_KEY);
+      sessionStorage.removeItem(STORAGE_KEY);
       clearAuthToken();
     }
     setLoading(false);
@@ -36,7 +28,7 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     const handleAuthExpired = () => {
       setUser(null);
-      localStorage.removeItem(STORAGE_KEY);
+      sessionStorage.removeItem(STORAGE_KEY);
       clearAuthToken();
     };
     window.addEventListener(AUTH_EXPIRED_EVENT, handleAuthExpired);
@@ -46,13 +38,13 @@ export function AuthProvider({ children }) {
   const login = useCallback(async (email, password) => {
       const { user: u } = await apiLogin(email, password);
       setUser(u);
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(u));
+      sessionStorage.setItem(STORAGE_KEY, JSON.stringify(u));
       return u;
   }, []);
 
   const logout = useCallback(() => {
     setUser(null);
-    localStorage.removeItem(STORAGE_KEY);
+    sessionStorage.removeItem(STORAGE_KEY);
     clearAuthToken();
   }, []);
 

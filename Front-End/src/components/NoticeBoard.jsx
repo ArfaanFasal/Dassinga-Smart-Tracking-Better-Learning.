@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import { PriorityBadge } from './PriorityBadge';
+import { isOverdue } from '../utils/deadlineUtils';
 
 export function NoticeBoard({ assignments = [] }) {
   return (
@@ -21,13 +22,29 @@ export function NoticeBoard({ assignments = [] }) {
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-            {assignments.map((a) => (
+            {assignments.map((a) => {
+              const expired = isOverdue(a.deadline);
+              return (
               <tr key={a.id}>
                 <td className="px-3 py-2.5 text-slate-800 dark:text-slate-200">{a.subject}</td>
                 <td className="px-3 py-2.5">
-                  <Link to={`/student/assignments/${a.id}`} className="font-medium text-dassinga-navy hover:underline dark:text-blue-300">
-                    {a.title}
-                  </Link>
+                  <div className="flex items-center gap-2">
+                    {expired ? (
+                      <span
+                        aria-label="Deadline passed"
+                        title="Deadline passed"
+                        className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-red-200 bg-red-50 text-xs font-bold leading-none text-red-600 dark:border-red-900/60 dark:bg-red-900/20 dark:text-red-400"
+                      >
+                        X
+                      </span>
+                    ) : null}
+                    <Link
+                      to={`/student/assignments/${a.id}`}
+                      className={`font-medium hover:underline ${expired ? 'text-red-600 dark:text-red-400' : 'text-dassinga-navy dark:text-blue-300'}`}
+                    >
+                      {a.title}
+                    </Link>
+                  </div>
                 </td>
                 <td className="px-3 py-2.5 text-slate-600 dark:text-slate-400">
                   {new Date(a.deadline).toLocaleString()}
@@ -36,7 +53,7 @@ export function NoticeBoard({ assignments = [] }) {
                   <PriorityBadge priority={a.priority} />
                 </td>
               </tr>
-            ))}
+            )})}
           </tbody>
         </table>
       </div>
@@ -44,4 +61,3 @@ export function NoticeBoard({ assignments = [] }) {
     </section>
   );
 }
-

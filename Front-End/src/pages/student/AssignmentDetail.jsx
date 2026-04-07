@@ -20,7 +20,7 @@ const IMAGE_ACCEPT = 'image/*';
 export function AssignmentDetail() {
   const { id } = useParams();
   const { user } = useAuth();
-  const { getStudentAssignmentMerged, submitAssignment } = useLMS();
+  const { getStudentAssignmentMerged, submitAssignment, refresh } = useLMS();
 
   const assignment = user?.id ? getStudentAssignmentMerged(id, user.id) : null;
 
@@ -28,6 +28,8 @@ export function AssignmentDetail() {
   const [includeFile, setIncludeFile] = useState(false);
   const [documentFile, setDocumentFile] = useState(null);
   const [imageFile, setImageFile] = useState(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [localSubmitted, setLocalSubmitted] = useState(false);
 
   if (!assignment) {
     return (
@@ -42,6 +44,7 @@ export function AssignmentDetail() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (isSubmitting) return;
     if (deadlinePassed && !done) {
       window.alert('Submission deadline has passed');
       return;
@@ -59,7 +62,20 @@ export function AssignmentDetail() {
       return;
     }
 
+    const prevAnswer = answer;
+    const prevDocumentFile = documentFile;
+    const prevImageFile = imageFile;
+    const prevIncludeFile = includeFile;
+    const safetyTimer = setTimeout(() => setIsSubmitting(false), 20000);
+
     try {
+      setIsSubmitting(true);
+      setLocalSubmitted(true);
+      setAnswer('');
+      setDocumentFile(null);
+      setImageFile(null);
+      setIncludeFile(false);
+
       const result = await submitAssignment({
         assignmentId: assignment.id,
         content: text || '',
@@ -67,23 +83,38 @@ export function AssignmentDetail() {
         mainFile: documentFile || null,
         imageFile: imageFile || null,
       });
-      if (result?.validation?.status === 'SUSPICIOUS') {
-        window.alert('Submitted with suspicious flag. Teacher will review it.');
+      const validation = String(result?.validation?.status || 'VALID').toUpperCase();
+      if (validation === 'SUSPICIOUS') {
+        window.alert('Submitted successfully. Marked as suspicious for teacher review.');
+      } else if (validation === 'INVALID') {
+        window.alert('Submitted successfully. Marked as invalid by validation checks.');
       } else {
         window.alert('Submitted successfully');
       }
-      setAnswer('');
-      setDocumentFile(null);
-      setImageFile(null);
-      setIncludeFile(false);
+      refresh().catch(() => {});
     } catch (err) {
-      window.alert(err.message || 'Submission failed');
+      const message = String(err?.message || 'Submission failed');
+      if (message.toLowerCase().includes('duplicate submission attempt')) {
+        setLocalSubmitted(true);
+        window.alert('Submitted successfully');
+        refresh().catch(() => {});
+      } else {
+        setLocalSubmitted(false);
+        setAnswer(prevAnswer);
+        setDocumentFile(prevDocumentFile);
+        setImageFile(prevImageFile);
+        setIncludeFile(prevIncludeFile);
+        window.alert(message);
+      }
+    } finally {
+      clearTimeout(safetyTimer);
+      setIsSubmitting(false);
     }
   };
 
-  const done = assignment.status === 'Completed';
+  const done = localSubmitted || assignment.status === 'Completed' || Boolean(assignment.lastSubmission);
   const deadlinePassed = isOverdue(assignment.deadline);
-  const submissionLocked = done || deadlinePassed;
+  const submissionLocked = done || deadlinePassed || isSubmitting;
 
   return (
     <div className="space-y-8">
@@ -108,7 +139,7 @@ export function AssignmentDetail() {
                 done ? 'font-medium text-emerald-600 dark:text-emerald-400' : 'font-medium text-amber-600'
               }
             >
-              {assignment.status}
+              {done ? 'Completed' : assignment.status}
             </span>
             {deadlinePassed && !done && <span className="font-medium text-red-600">Deadline passed</span>}
           </div>
@@ -198,7 +229,7 @@ export function AssignmentDetail() {
               disabled={submissionLocked}
               className="mt-6 w-full rounded-xl bg-gradient-to-r from-brand-600 to-indigo-600 py-3 text-sm font-semibold text-white shadow-lg shadow-brand-500/25 transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {done ? 'Already submitted' : deadlinePassed ? 'Deadline passed' : 'Submit'}
+              {done ? 'Already submitted' : deadlinePassed ? 'Deadline passed' : isSubmitting ? 'Submitting...' : 'Submit'}
             </button>
           </form>
         </div>

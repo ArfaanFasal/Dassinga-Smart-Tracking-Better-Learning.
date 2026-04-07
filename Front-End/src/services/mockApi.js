@@ -10,7 +10,7 @@ export const api = axios.create({
 });
 
 export function getAuthToken() {
-  return localStorage.getItem(TOKEN_KEY) || '';
+  return sessionStorage.getItem(TOKEN_KEY) || '';
 }
 
 export function hasAuthToken() {
@@ -18,22 +18,22 @@ export function hasAuthToken() {
 }
 
 export function setAuthToken(token) {
-  if (token) localStorage.setItem(TOKEN_KEY, token);
-  else localStorage.removeItem(TOKEN_KEY);
+  if (token) sessionStorage.setItem(TOKEN_KEY, token);
+  else sessionStorage.removeItem(TOKEN_KEY);
 }
 
 export function getRefreshToken() {
-  return localStorage.getItem(REFRESH_TOKEN_KEY) || '';
+  return sessionStorage.getItem(REFRESH_TOKEN_KEY) || '';
 }
 
 export function setRefreshToken(token) {
-  if (token) localStorage.setItem(REFRESH_TOKEN_KEY, token);
-  else localStorage.removeItem(REFRESH_TOKEN_KEY);
+  if (token) sessionStorage.setItem(REFRESH_TOKEN_KEY, token);
+  else sessionStorage.removeItem(REFRESH_TOKEN_KEY);
 }
 
 export function clearAuthToken() {
-  localStorage.removeItem(TOKEN_KEY);
-  localStorage.removeItem(REFRESH_TOKEN_KEY);
+  sessionStorage.removeItem(TOKEN_KEY);
+  sessionStorage.removeItem(REFRESH_TOKEN_KEY);
 }
 
 api.interceptors.request.use((config) => {
@@ -183,6 +183,8 @@ export async function submitAssignmentApi({ assignmentId, textAnswer, includeFil
 
     const { data } = await api.post('/submissions', form, {
       headers: { 'Content-Type': 'multipart/form-data' },
+      // File uploads can take longer on some machines/networks.
+      timeout: 60000,
     });
 
     return {
@@ -190,6 +192,31 @@ export async function submitAssignmentApi({ assignmentId, textAnswer, includeFil
       validation: data?.data?.validation,
     };
   } catch (err) {
+    // If request timed out but backend still created the submission,
+    // recover by checking latest submission for this assignment.
+    if (err?.code === 'ECONNABORTED' && assignmentId) {
+      try {
+        const list = await fetchSubmissions(assignmentId);
+        if (Array.isArray(list) && list.length > 0) {
+          const latest = [...list].sort(
+            (a, b) => new Date(b?.submittedAt || 0).getTime() - new Date(a?.submittedAt || 0).getTime()
+          )[0];
+          if (latest) {
+            return {
+              submission: latest,
+              validation: {
+                status: latest.validationStatus || 'VALID',
+                score: latest.validationScore ?? null,
+                flags: latest.validationFlags || [],
+              },
+              recoveredFromTimeout: true,
+            };
+          }
+        }
+      } catch {
+        // Fall through to normal error handling.
+      }
+    }
     throw new Error(getErrorMessage(err, 'Submission failed'));
   }
 }
@@ -269,13 +296,33 @@ export async function adminToggleUserStatus(userId, enabled) {
   return data?.data?.user;
 }
 
-export function sortNoticeBoard(assignments) {
+export function sortNoticeBoard(assignments, submissions = []) {
   const rank = { High: 0, Medium: 1, Low: 2 };
+  const submittedAssignmentIds = new Set(
+    (submissions || []).map((s) => String(s.assignmentId))
+  );
+
+  const getGroup = (a) => {
+    const hasSubmission = submittedAssignmentIds.has(String(a.id));
+    if (!hasSubmission) return 0; // Not submitted yet (show first)
+    return 1; // Already has submissions
+  };
+
   return [...assignments].sort((a, b) => {
+    const ga = getGroup(a);
+    const gb = getGroup(b);
+    if (ga !== gb) return ga - gb;
+
+    // Nearest deadlines first to surface urgent items.
+    const da = new Date(a.deadline).getTime();
+    const db = new Date(b.deadline).getTime();
+    if (da !== db) return da - db;
+
     const pa = rank[a.priority] ?? 9;
     const pb = rank[b.priority] ?? 9;
     if (pa !== pb) return pa - pb;
-    return new Date(a.deadline) - new Date(b.deadline);
+
+    return String(a.title || '').localeCompare(String(b.title || ''));
   });
 }
 

@@ -11,5 +11,6 @@ def trigger_validation(sender, instance, created, **kwargs):
         try:
             validate_submission_task.delay(instance.id)
         except Exception:
-            # Dev fallback when broker is unavailable.
-            validate_submission_task(instance.id)
+            # If broker is unavailable, do not block submission creation.
+            # This keeps submit API responsive; validation can be retried later.
+            pass

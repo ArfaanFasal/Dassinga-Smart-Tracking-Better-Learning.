@@ -11,7 +11,7 @@ import { isOverdue } from '../utils/deadlineUtils';
 const FILE_ACCEPT =
   '.pdf,.doc,.docx,.zip,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/zip,image/*';
 
-export function AssignmentCard({ assignment }) {
+export function AssignmentCard({ assignment, onSubmitted }) {
   const { user } = useAuth();
   const { submitAssignment, refresh, saveAssignmentDraft, loadAssignmentDraft, markAssignmentCompleted } =
     useLMS();
@@ -22,6 +22,8 @@ export function AssignmentCard({ assignment }) {
   const [mainFile, setMainFile] = useState(null);
   const [imageFile, setImageFile] = useState(null);
   const [imagePreview, setImagePreview] = useState(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [localSubmitted, setLocalSubmitted] = useState(false);
 
   useEffect(() => {
     const d = loadAssignmentDraft(assignment.id);
@@ -48,13 +50,14 @@ export function AssignmentCard({ assignment }) {
     });
   }, [notes, includeFile, assignment.id, saveAssignmentDraft]);
 
-  const done = assignment.status === 'Completed' || !!submission;
+  const done = localSubmitted || assignment.status === 'Completed' || !!submission;
   const deadlinePassed = isOverdue(assignment.deadline);
-  const submissionLocked = done || deadlinePassed;
+  const submissionLocked = done || deadlinePassed || isSubmitting;
   const r = getDeadlineReminder(assignment.deadline);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (isSubmitting) return;
     if (deadlinePassed && !done) {
       window.alert('Submission deadline has passed');
       return;
@@ -72,7 +75,23 @@ export function AssignmentCard({ assignment }) {
       return;
     }
 
+    const prevNotes = notes;
+    const prevMainFile = mainFile;
+    const prevImageFile = imageFile;
+    const prevIncludeFile = includeFile;
+    const safetyTimer = setTimeout(() => setIsSubmitting(false), 20000);
+
     try {
+      setIsSubmitting(true);
+      // Optimistic UI: reflect submitted state immediately with no lag.
+      setLocalSubmitted(true);
+      onSubmitted?.('Assignment submitted successfully.');
+
+      setNotes('');
+      setMainFile(null);
+      setImageFile(null);
+      setIncludeFile(false);
+
       const result = await submitAssignment({
         assignmentId: assignment.id,
         content: text || '',
@@ -80,19 +99,34 @@ export function AssignmentCard({ assignment }) {
         mainFile,
         imageFile,
       });
-      const validation = result?.validation?.status || 'VALID';
+      const validation = String(result?.validation?.status || 'VALID').toUpperCase();
       if (validation === 'SUSPICIOUS') {
-        window.alert('Submitted with suspicious flag. Teacher will review it.');
+        window.alert('Submitted successfully. Marked as suspicious for teacher review.');
+      } else if (validation === 'INVALID') {
+        window.alert('Submitted successfully. Marked as invalid by validation checks.');
       } else {
         window.alert('Submitted successfully');
       }
-      setNotes('');
-      setMainFile(null);
-      setImageFile(null);
-      setIncludeFile(false);
-      await refresh();
+      refresh().catch(() => {});
     } catch (err) {
-      window.alert(err.message || 'Submission failed');
+      const message = String(err?.message || 'Submission failed');
+      if (message.toLowerCase().includes('duplicate submission attempt')) {
+        setLocalSubmitted(true);
+        window.alert('Submitted successfully');
+        onSubmitted?.('Assignment submitted successfully.');
+        refresh().catch(() => {});
+      } else {
+        setLocalSubmitted(false);
+        // Restore user input if submit actually failed.
+        setNotes(prevNotes);
+        setMainFile(prevMainFile);
+        setImageFile(prevImageFile);
+        setIncludeFile(prevIncludeFile);
+        window.alert(message);
+      }
+    } finally {
+      clearTimeout(safetyTimer);
+      setIsSubmitting(false);
     }
   };
 
@@ -205,7 +239,7 @@ export function AssignmentCard({ assignment }) {
             disabled={submissionLocked}
             className="rounded-xl bg-dassinga-green px-4 py-2 text-sm font-semibold text-white shadow transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {done ? 'Submitted' : deadlinePassed ? 'Deadline passed' : 'Submit'}
+            {done ? 'Submitted' : deadlinePassed ? 'Deadline passed' : isSubmitting ? 'Submitting...' : 'Submit'}
           </button>
           {!submissionLocked && (
             <button

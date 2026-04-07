@@ -112,8 +112,22 @@ export function LMSProvider({ children }) {
   const studentAssignments = useMemo(() => {
     const role = String(user?.role || '').toLowerCase();
     if (role !== 'student') return [];
-    return assignments;
-  }, [assignments, user?.role]);
+    return assignments.map((a) => {
+      const sub = submissions.find((s) => String(s.assignmentId) === String(a.id));
+      if (!sub) return a;
+      return {
+        ...a,
+        status: 'Completed',
+        lastSubmission: {
+          fileUrl: sub.fileUrl || '',
+          imageUrl: sub.imageUrl || '',
+          submittedAt: sub.submittedAt || '',
+          validationStatus: sub.validationStatus || 'VALID',
+          validationFlags: sub.validationFlags || [],
+        },
+      };
+    });
+  }, [assignments, submissions, user?.role]);
 
   const getStudentAssignmentMerged = useCallback(
     (assignmentId) => {
@@ -124,6 +138,15 @@ export function LMSProvider({ children }) {
       return {
         ...a,
         status: sub ? 'Completed' : a.status || 'Pending',
+        lastSubmission: sub
+          ? {
+              fileUrl: sub.fileUrl || '',
+              imageUrl: sub.imageUrl || '',
+              submittedAt: sub.submittedAt || '',
+              validationStatus: sub.validationStatus || 'VALID',
+              validationFlags: sub.validationFlags || [],
+            }
+          : a.lastSubmission || null,
       };
     },
     [assignments, submissions]
@@ -221,7 +244,7 @@ export function LMSProvider({ children }) {
   }, [refresh]);
 
   const teacherData = useMemo(() => {
-    const noticeBoard = sortNoticeBoard(assignments);
+    const noticeBoard = sortNoticeBoard(assignments, submissions);
     const analytics = summarizeTeacherAnalytics(submissions);
     return {
       assignments,

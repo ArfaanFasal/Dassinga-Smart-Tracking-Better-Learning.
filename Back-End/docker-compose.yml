@@ -1,0 +1,29 @@
+version: "3.9"
+
+services:
+  web:
+    build: .
+    command: sh -c "python manage.py migrate && gunicorn lms_backend.wsgi:application --bind 0.0.0.0:8000"
+    volumes:
+      - .:/app
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    depends_on:
+      - redis
+
+  celery:
+    build: .
+    command: celery -A lms_backend worker --loglevel=info
+    volumes:
+      - .:/app
+    env_file:
+      - .env
+    depends_on:
+      - redis
+
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"

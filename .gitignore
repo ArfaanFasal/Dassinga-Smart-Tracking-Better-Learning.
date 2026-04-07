@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Django
+Back-End/.env
+Back-End/db.sqlite3
+Back-End/media/
+Back-End/staticfiles/
+
+# Node
+node_modules/
+Front-End/node_modules/
+
+# Logs
+*.log

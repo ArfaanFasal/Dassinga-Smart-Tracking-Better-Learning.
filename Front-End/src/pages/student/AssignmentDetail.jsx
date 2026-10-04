@@ -98,6 +98,12 @@ export function AssignmentDetail() {
         setLocalSubmitted(true);
         window.alert('Submitted successfully');
         refresh().catch(() => {});
+      } else if (message.toLowerCase().includes('request timed out')) {
+        setLocalSubmitted(true);
+        window.alert('Submitted successfully. Syncing status...');
+        refresh().catch(() => {});
+        setTimeout(() => refresh().catch(() => {}), 3000);
+        setTimeout(() => refresh().catch(() => {}), 8000);
       } else {
         setLocalSubmitted(false);
         setAnswer(prevAnswer);

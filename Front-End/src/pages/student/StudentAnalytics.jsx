@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   BarChart,
   Bar,
@@ -14,18 +14,104 @@ import {
   Area,
 } from 'recharts';
 import { useLMS } from '../../context/LMSContext';
-import { getAnalyticsSeed } from '../../services/mockApi';
+import { fetchSubmissions } from '../../services/mockApi';
 
 export function StudentAnalytics() {
   const { studentAssignments } = useLMS();
-  const { weekly, subjects, submissionTrends } = getAnalyticsSeed();
+  const [submissions, setSubmissions] = useState([]);
+
+  useEffect(() => {
+    let alive = true;
+    const load = () =>
+      fetchSubmissions()
+        .then((subs) => {
+          if (!alive) return;
+          setSubmissions(Array.isArray(subs) ? subs : []);
+        })
+        .catch(() => {
+          if (!alive) return;
+        });
+
+    load();
+    const intervalId = setInterval(load, 10000);
+    const onFocus = () => load();
+    if (typeof window !== 'undefined') {
+      window.addEventListener('focus', onFocus);
+      document.addEventListener('visibilitychange', onFocus);
+    }
+
+    return () => {
+      alive = false;
+      clearInterval(intervalId);
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('focus', onFocus);
+        document.removeEventListener('visibilitychange', onFocus);
+      }
+    };
+  }, []);
+
+  const completedAssignmentIds = useMemo(() => {
+    const ids = new Set();
+    submissions.forEach((s) => {
+      const validation = String(s?.validationStatus || '').toUpperCase();
+      const status = String(s?.status || '').toLowerCase();
+      // Count as completed only when not invalid/rejected.
+      if (validation === 'INVALID' || status === 'rejected') return;
+      if (s?.assignmentId != null) ids.add(String(s.assignmentId));
+    });
+    return ids;
+  }, [submissions]);
 
   const completionRate = useMemo(() => {
     const t = studentAssignments.length;
     if (!t) return 0;
-    const c = studentAssignments.filter((a) => a.status === 'Completed').length;
+    const c = studentAssignments.filter((a) => completedAssignmentIds.has(String(a?.id ?? ''))).length;
     return Math.round((c / t) * 100);
-  }, [studentAssignments]);
+  }, [studentAssignments, completedAssignmentIds]);
+
+  const weekly = useMemo(() => {
+    const total = studentAssignments.length;
+    const completed = studentAssignments.filter((a) => completedAssignmentIds.has(String(a?.id ?? ''))).length;
+    const pending = Math.max(0, total - completed);
+    return [{ week: 'Current', completed, pending }];
+  }, [studentAssignments, completedAssignmentIds]);
+
+  const subjects = useMemo(() => {
+    const bySubject = new Map();
+    studentAssignments.forEach((a) => {
+      const subject = String(a?.subject || 'Other');
+      if (!bySubject.has(subject)) bySubject.set(subject, { total: 0, completed: 0 });
+      const row = bySubject.get(subject);
+      row.total += 1;
+      if (completedAssignmentIds.has(String(a?.id ?? ''))) row.completed += 1;
+    });
+
+    return Array.from(bySubject.entries()).map(([subject, row]) => ({
+      subject,
+      score: row.total ? Math.round((row.completed / row.total) * 100) : 0,
+    }));
+  }, [studentAssignments, completedAssignmentIds]);
+
+  const submissionTrends = useMemo(() => {
+    const now = Date.now();
+    const dayMs = 24 * 60 * 60 * 1000;
+    const buckets = [
+      { period: 'P1', minDays: 21, maxDays: 28, submissions: 0 },
+      { period: 'P2', minDays: 14, maxDays: 21, submissions: 0 },
+      { period: 'P3', minDays: 7, maxDays: 14, submissions: 0 },
+      { period: 'P4', minDays: 0, maxDays: 7, submissions: 0 },
+    ];
+
+    submissions.forEach((s) => {
+      const ts = new Date(s?.submittedAt || '').getTime();
+      if (!Number.isFinite(ts)) return;
+      const ageDays = (now - ts) / dayMs;
+      const bucket = buckets.find((b) => ageDays >= b.minDays && ageDays < b.maxDays);
+      if (bucket) bucket.submissions += 1;
+    });
+
+    return buckets.map(({ period, submissions: count }) => ({ period, submissions: count }));
+  }, [submissions]);
 
   return (
     <div className="space-y-8">

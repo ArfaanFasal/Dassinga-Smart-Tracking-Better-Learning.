@@ -115,6 +115,14 @@ export function AssignmentCard({ assignment, onSubmitted }) {
         window.alert('Submitted successfully');
         onSubmitted?.('Assignment submitted successfully.');
         refresh().catch(() => {});
+      } else if (message.toLowerCase().includes('request timed out')) {
+        // Timeout can happen even when backend eventually stores submission.
+        // Keep optimistic submitted state and sync in background.
+        setLocalSubmitted(true);
+        onSubmitted?.('Submission received. Syncing status...');
+        refresh().catch(() => {});
+        setTimeout(() => refresh().catch(() => {}), 3000);
+        setTimeout(() => refresh().catch(() => {}), 8000);
       } else {
         setLocalSubmitted(false);
         // Restore user input if submit actually failed.
